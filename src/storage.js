@@ -21,6 +21,15 @@ export function initDb(dbPath) {
     )
   `);
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS guild_config (
+      guild_id            TEXT PRIMARY KEY,
+      coordle_channel_id  TEXT,
+      coordle_bot_id      TEXT,
+      stats_channel_id    TEXT
+    )
+  `);
+
   // Migrate: add user_id column if it doesn't exist yet
   const cols = db.prepare(`PRAGMA table_info(snapshots)`).all();
   if (!cols.find(c => c.name === 'user_id')) {
@@ -29,6 +38,58 @@ export function initDb(dbPath) {
 
   return db;
 }
+
+// ---------------------------------------------------------------------------
+// Guild config
+// ---------------------------------------------------------------------------
+
+/**
+ * @param {string} guildId
+ * @returns {{ coordleChannelId: string|null, coordleBotId: string|null, statsChannelId: string|null } | null}
+ */
+export function getGuildConfig(guildId) {
+  const row = db
+    .prepare('SELECT coordle_channel_id, coordle_bot_id, stats_channel_id FROM guild_config WHERE guild_id = ?')
+    .get(guildId);
+  if (!row) return null;
+  return {
+    coordleChannelId: row.coordle_channel_id,
+    coordleBotId: row.coordle_bot_id,
+    statsChannelId: row.stats_channel_id,
+  };
+}
+
+/**
+ * Upsert a single config field for a guild.
+ * @param {string} guildId
+ * @param {'coordle_channel_id'|'coordle_bot_id'|'stats_channel_id'} key
+ * @param {string} value
+ */
+export function setGuildConfig(guildId, key, value) {
+  const allowed = ['coordle_channel_id', 'coordle_bot_id', 'stats_channel_id'];
+  if (!allowed.includes(key)) throw new Error(`Invalid config key: ${key}`);
+
+  db.prepare(`
+    INSERT INTO guild_config (guild_id, ${key})
+    VALUES (?, ?)
+    ON CONFLICT(guild_id) DO UPDATE SET ${key} = excluded.${key}
+  `).run(guildId, value);
+}
+
+/**
+ * Returns all guilds that have a stats channel configured.
+ * @returns {{ guildId: string, statsChannelId: string }[]}
+ */
+export function getAllConfiguredGuilds() {
+  return db
+    .prepare('SELECT guild_id, stats_channel_id FROM guild_config WHERE stats_channel_id IS NOT NULL')
+    .all()
+    .map(r => ({ guildId: r.guild_id, statsChannelId: r.stats_channel_id }));
+}
+
+// ---------------------------------------------------------------------------
+// Snapshots
+// ---------------------------------------------------------------------------
 
 /**
  * Save a leaderboard snapshot, updating all historical rows if a player's
@@ -59,7 +120,6 @@ export function saveSnapshot(date, entries) {
 
   const run = db.transaction(() => {
     for (const e of entries) {
-      // Check if this user has a different stored name
       const existing = getLastName.get(e.userId);
       if (existing && existing.player !== e.player) {
         renameHistory.run(e.player, e.userId);

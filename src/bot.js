@@ -1,9 +1,10 @@
-import { Client, GatewayIntentBits } from 'discord.js';
+import { Client, GatewayIntentBits, Events } from 'discord.js';
 import { config } from './config.js';
-import { initDb, getSnapshot, getPreviousSnapshotDate, getLatestSnapshotDate } from './storage.js';
+import { initDb, getSnapshot, getPreviousSnapshotDate, getLatestSnapshotDate, getGuildConfig } from './storage.js';
 import { computeDailyStats } from './stats.js';
 import { buildDailyEmbed } from './formatter.js';
 import { registerSchedules, handleLeaderboardMessage, postDailySummary } from './scheduler.js';
+import { handleSetupCommand, registerCommands } from './commands.js';
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
@@ -24,20 +25,49 @@ const client = new Client({
   ],
 });
 
-client.once('clientReady', () => {
+client.once('clientReady', async () => {
   console.log(`[bot] Logged in as ${client.user.tag}`);
   initDb(config.dbPath);
   registerSchedules(client);
+
+  // Register slash commands globally
+  await registerCommands(client.user.id);
 });
 
-client.on('messageCreate', async (message) => {
-  if (message.channelId !== config.coordleChannelId) return;
+// Welcome message when bot joins a new server
+client.on(Events.GuildCreate, async (guild) => {
+  const channel = guild.systemChannel ?? guild.channels.cache.find(c => c.isTextBased());
+  if (!channel) return;
+  await channel.send(
+    `👋 Thanks for adding **Coordle Stats**!\n\nGet started with two commands:\n` +
+    `• \`/setup-coordle-stats channel #your-coordle-channel\`\n` +
+    `• \`/setup-coordle-stats coordle-bot @Co-ordle\`\n\n` +
+    `Once configured, stats will be posted automatically after every \`!top\`.`
+  );
+});
+
+// Slash command handler
+client.on(Events.InteractionCreate, async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+  if (interaction.commandName === 'setup-coordle-stats') {
+    await handleSetupCommand(interaction);
+  }
+});
+
+// Message handler
+client.on(Events.MessageCreate, async (message) => {
+  if (!message.guildId) return;
+
+  const guildCfg = getGuildConfig(message.guildId);
+  if (!guildCfg) return;
+
+  if (message.channelId !== guildCfg.coordleChannelId) return;
 
   // Passively capture Co-ordle leaderboard responses
-  if (message.author.id === config.coordleBotId) {
+  if (guildCfg.coordleBotId && message.author.id === guildCfg.coordleBotId) {
     const result = await handleLeaderboardMessage(message);
-    if (result) {
-      await postDailySummary(client, result.date);
+    if (result && guildCfg.statsChannelId) {
+      await postDailySummary(client, result.date, guildCfg.statsChannelId);
     }
     return;
   }

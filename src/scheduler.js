@@ -1,7 +1,7 @@
 import cron from 'node-cron';
 import { config } from './config.js';
 import { parseLeaderboard, resolvePlayerNames } from './parser.js';
-import { saveSnapshot, getSnapshot, getPreviousSnapshotDate, getLatestSnapshotDate } from './storage.js';
+import { saveSnapshot, getSnapshot, getPreviousSnapshotDate, getLatestSnapshotDate, getAllConfiguredGuilds } from './storage.js';
 import { computeDailyStats } from './stats.js';
 import { buildDailyEmbed, buildMonthlyWinnerEmbed } from './formatter.js';
 
@@ -31,9 +31,8 @@ function isLastDayOfMonth(date = new Date()) {
 
 /**
  * Called whenever the Co-ordle bot posts a leaderboard message (passively captured).
- * Parses and stores the snapshot.
  * @param {import('discord.js').Message} message
- * @returns {{ date: string, entries: object[] } | null}
+ * @returns {Promise<{ date: string, entries: object[], guildId: string } | null>}
  */
 export async function handleLeaderboardMessage(message) {
   const rawEntries = parseLeaderboard(message);
@@ -47,18 +46,19 @@ export async function handleLeaderboardMessage(message) {
     console.log(`[scheduler] Name change detected: "${r.from}" → "${r.to}" (${r.userId}) — updated all history`);
   }
 
-  return { date, entries };
+  return { date, entries, guildId: message.guildId };
 }
 
 /**
- * Post the daily stats summary to the stats channel.
+ * Post the daily stats summary to the stats channel for a given guild.
  * @param {import('discord.js').Client} client
  * @param {string} date  ISO date string
+ * @param {string} statsChannelId
  */
-export async function postDailySummary(client, date) {
-  const statsChannel = await client.channels.fetch(config.statsChannelId);
+export async function postDailySummary(client, date, statsChannelId) {
+  const statsChannel = await client.channels.fetch(statsChannelId).catch(() => null);
   if (!statsChannel?.isTextBased()) {
-    console.error('[scheduler] Stats channel not found or not text-based');
+    console.error(`[scheduler] Stats channel ${statsChannelId} not found or not text-based`);
     return;
   }
 
@@ -74,7 +74,7 @@ export async function postDailySummary(client, date) {
   const stats = computeDailyStats(today, yesterday);
   const embed = buildDailyEmbed(stats, dateLabel(date));
   await statsChannel.send({ embeds: [embed] });
-  console.log(`[scheduler] Posted daily summary for ${date}`);
+  console.log(`[scheduler] Posted daily summary for ${date} in channel ${statsChannelId}`);
 
   if (isLastDayOfMonth()) {
     const winnerEmbed = buildMonthlyWinnerEmbed(today, monthLabel(date));
@@ -92,7 +92,6 @@ export async function postDailySummary(client, date) {
 export function registerSchedules(client) {
   const hour = config.snapshotHour;
 
-  // Daily summary at configured hour — uses most recent snapshot captured that day
   cron.schedule(`0 ${hour} * * *`, async () => {
     console.log(`[scheduler] Running daily summary (${hour}:00)`);
     const date = todayISO();
@@ -101,7 +100,11 @@ export function registerSchedules(client) {
       console.error('[scheduler] No snapshots found yet, skipping summary');
       return;
     }
-    await postDailySummary(client, latestDate);
+
+    const guilds = getAllConfiguredGuilds();
+    for (const { statsChannelId } of guilds) {
+      await postDailySummary(client, latestDate, statsChannelId);
+    }
   });
 
   console.log(`[scheduler] Registered daily summary cron at ${hour}:00`);
