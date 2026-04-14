@@ -1,0 +1,20 @@
+{
+  "name": "coordle-stats-bot",
+  "version": "1.0.0",
+  "description": "Daily stats and analytics companion bot for the Co-ordle Discord bot",
+  "type": "module",
+  "main": "src/bot.js",
+  "scripts": {
+    "start": "node src/bot.js",
+    "test": "node --test tests/"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.4.3",
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.4.5",
+    "node-cron": "^3.0.3"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
