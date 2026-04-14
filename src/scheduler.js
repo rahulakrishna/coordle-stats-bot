@@ -41,8 +41,11 @@ export async function handleLeaderboardMessage(message) {
 
   const entries = await resolvePlayerNames(message, rawEntries);
   const date = todayISO();
-  const inserted = saveSnapshot(date, entries);
+  const { inserted, renamed } = saveSnapshot(date, entries);
   console.log(`[scheduler] Captured leaderboard — saved ${inserted} new rows for ${date}`);
+  for (const r of renamed) {
+    console.log(`[scheduler] Name change detected: "${r.from}" → "${r.to}" (${r.userId}) — updated all history`);
+  }
 
   return { date, entries };
 }

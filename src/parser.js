@@ -60,7 +60,7 @@ export async function resolvePlayerNames(message, entries) {
           // Keep userId as fallback
         }
       }
-      return { rank: e.rank, player, score: e.score };
+      return { rank: e.rank, userId: e.userId, player, score: e.score };
     }),
   );
   return resolved;
