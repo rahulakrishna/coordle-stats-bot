@@ -21,6 +21,12 @@ export function initDb(dbPath) {
     )
   `);
 
+  // Migrate: add user_id column if it doesn't exist yet
+  const cols = db.prepare(`PRAGMA table_info(snapshots)`).all();
+  if (!cols.find(c => c.name === 'user_id')) {
+    db.exec(`ALTER TABLE snapshots ADD COLUMN user_id TEXT NOT NULL DEFAULT ''`);
+  }
+
   return db;
 }
 
