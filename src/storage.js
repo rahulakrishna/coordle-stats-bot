@@ -40,6 +40,16 @@ export function initDb(dbPath) {
     db.exec(`ALTER TABLE snapshots ADD COLUMN guild_id TEXT NOT NULL DEFAULT ''`);
   }
 
+  // Backfill: assign the first configured guild to any untagged snapshots
+  const untagged = db.prepare(`SELECT COUNT(*) as n FROM snapshots WHERE guild_id = ''`).get();
+  if (untagged.n > 0) {
+    const firstGuild = db.prepare(`SELECT guild_id FROM guild_config LIMIT 1`).get();
+    if (firstGuild) {
+      const { changes } = db.prepare(`UPDATE snapshots SET guild_id = ? WHERE guild_id = ''`).run(firstGuild.guild_id);
+      console.log(`[db] Backfilled ${changes} snapshot rows with guild_id = ${firstGuild.guild_id}`);
+    }
+  }
+
   return db;
 }
 
