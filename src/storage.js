@@ -50,6 +50,37 @@ export function initDb(dbPath) {
     }
   }
 
+  // Fix UNIQUE constraint: old DBs have UNIQUE(date, user_id) without guild_id,
+  // which causes cross-guild data corruption via INSERT OR REPLACE.
+  // Recreate the table with the correct UNIQUE(guild_id, date, user_id) if needed.
+  const indexList = db.prepare(`PRAGMA index_list(snapshots)`).all();
+  const hasCorrectUnique = indexList.some(idx => {
+    if (!idx.unique) return false;
+    const idxCols = db.prepare(`PRAGMA index_info(${idx.name})`).all().map(c => c.name);
+    return idxCols.includes('guild_id') && idxCols.includes('date') && idxCols.includes('user_id');
+  });
+
+  if (!hasCorrectUnique) {
+    db.exec(`
+      CREATE TABLE snapshots_new (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        guild_id    TEXT NOT NULL DEFAULT '',
+        date        TEXT NOT NULL,
+        user_id     TEXT NOT NULL,
+        player      TEXT NOT NULL,
+        score       INTEGER NOT NULL,
+        rank        INTEGER NOT NULL,
+        captured_at TEXT NOT NULL,
+        UNIQUE(guild_id, date, user_id)
+      );
+      INSERT INTO snapshots_new (id, guild_id, date, user_id, player, score, rank, captured_at)
+        SELECT id, guild_id, date, user_id, player, score, rank, captured_at FROM snapshots;
+      DROP TABLE snapshots;
+      ALTER TABLE snapshots_new RENAME TO snapshots;
+    `);
+    console.log(`[db] Migrated snapshots table to UNIQUE(guild_id, date, user_id)`);
+  }
+
   return db;
 }
 
