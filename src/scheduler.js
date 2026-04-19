@@ -26,7 +26,7 @@ function monthLabel(isoDate) {
 function isLastDayOfMonth(date = new Date()) {
   const next = new Date(date);
   next.setDate(next.getDate() + 1);
-  return next.getDate() === 1;
+  return next.getDate() === 1 && date.getHours() >= 23;
 }
 
 /**
@@ -40,7 +40,7 @@ export async function handleLeaderboardMessage(message) {
 
   const entries = await resolvePlayerNames(message, rawEntries);
   const date = todayISO();
-  const { inserted, renamed } = saveSnapshot(date, entries);
+  const { inserted, renamed } = saveSnapshot(message.guildId, date, entries);
   console.log(`[scheduler] Captured leaderboard — saved ${inserted} new rows for ${date}`);
   for (const r of renamed) {
     console.log(`[scheduler] Name change detected: "${r.from}" → "${r.to}" (${r.userId}) — updated all history`);
@@ -52,19 +52,20 @@ export async function handleLeaderboardMessage(message) {
 /**
  * Post the daily stats summary to the stats channel for a given guild.
  * @param {import('discord.js').Client} client
+ * @param {string} guildId
  * @param {string} date  ISO date string
  * @param {string} statsChannelId
  */
-export async function postDailySummary(client, date, statsChannelId) {
+export async function postDailySummary(client, guildId, date, statsChannelId) {
   const statsChannel = await client.channels.fetch(statsChannelId).catch(() => null);
   if (!statsChannel?.isTextBased()) {
     console.error(`[scheduler] Stats channel ${statsChannelId} not found or not text-based`);
     return;
   }
 
-  const today = getSnapshot(date);
-  const prevDate = getPreviousSnapshotDate(date);
-  const yesterday = prevDate ? getSnapshot(prevDate) : null;
+  const today = getSnapshot(guildId, date);
+  const prevDate = getPreviousSnapshotDate(guildId, date);
+  const yesterday = prevDate ? getSnapshot(guildId, prevDate) : null;
 
   if (today.length === 0) {
     console.error(`[scheduler] No snapshot for ${date}, skipping summary`);
@@ -95,15 +96,14 @@ export function registerSchedules(client) {
   cron.schedule(`0 ${hour} * * *`, async () => {
     console.log(`[scheduler] Running daily summary (${hour}:00)`);
     const date = todayISO();
-    const latestDate = getLatestSnapshotDate(date);
-    if (!latestDate) {
-      console.error('[scheduler] No snapshots found yet, skipping summary');
-      return;
-    }
-
     const guilds = getAllConfiguredGuilds();
-    for (const { statsChannelId } of guilds) {
-      await postDailySummary(client, latestDate, statsChannelId);
+    for (const { guildId, statsChannelId } of guilds) {
+      const latestDate = getLatestSnapshotDate(guildId, date);
+      if (!latestDate) {
+        console.error(`[scheduler] No snapshots found yet for guild ${guildId}, skipping summary`);
+        continue;
+      }
+      await postDailySummary(client, guildId, latestDate, statsChannelId);
     }
   });
 

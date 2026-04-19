@@ -67,7 +67,7 @@ client.on(Events.MessageCreate, async (message) => {
   if (guildCfg.coordleBotId && message.author.id === guildCfg.coordleBotId) {
     const result = await handleLeaderboardMessage(message);
     if (result && guildCfg.statsChannelId) {
-      await postDailySummary(client, result.date, guildCfg.statsChannelId);
+      await postDailySummary(client, result.guildId, result.date, guildCfg.statsChannelId);
     }
     return;
   }
@@ -75,16 +75,16 @@ client.on(Events.MessageCreate, async (message) => {
   // !stats command from human users
   if (!message.author.bot && message.content.trim().toLowerCase() === '!stats') {
     const today = todayISO();
-    const latestDate = getLatestSnapshotDate(today);
+    const latestDate = getLatestSnapshotDate(message.guildId, today);
 
     if (!latestDate) {
       await message.reply('No snapshot data yet — data is captured whenever someone runs `!top`.');
       return;
     }
 
-    const currentSnapshot = getSnapshot(latestDate);
-    const prevDate = getPreviousSnapshotDate(latestDate);
-    const prevSnapshot = prevDate ? getSnapshot(prevDate) : null;
+    const currentSnapshot = getSnapshot(message.guildId, latestDate);
+    const prevDate = getPreviousSnapshotDate(message.guildId, latestDate);
+    const prevSnapshot = prevDate ? getSnapshot(message.guildId, prevDate) : null;
 
     const stats = computeDailyStats(currentSnapshot, prevSnapshot);
     const embed = buildDailyEmbed(stats, dateLabel(latestDate));

@@ -76,7 +76,7 @@ client.on(Events.MessageCreate, async (message) => {
   const entries = await resolvePlayerNames(message, rawEntries);
 
   const date = new Date().toISOString().slice(0, 10);
-  const { inserted, renamed } = saveSnapshot(date, entries);
+  const { inserted, renamed } = saveSnapshot(message.guildId, date, entries);
   console.log(`[run-now] Saved ${inserted} rows for ${date}:`, entries);
   for (const r of renamed) {
     console.log(`[run-now] Name change detected: "${r.from}" → "${r.to}" — updated all history`);
@@ -84,7 +84,7 @@ client.on(Events.MessageCreate, async (message) => {
 
   if (guildCfg.statsChannelId) {
     console.log(`[run-now] Posting daily summary...`);
-    await postDailySummary(client, date, guildCfg.statsChannelId);
+    await postDailySummary(client, message.guildId, date, guildCfg.statsChannelId);
   }
 
   console.log('[run-now] Done.');
