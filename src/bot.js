@@ -1,6 +1,6 @@
 import { Client, GatewayIntentBits, Events } from 'discord.js';
 import { config } from './config.js';
-import { initDb, getSnapshot, getPreviousSnapshotDate, getLatestSnapshotDate, getGuildConfig } from './storage.js';
+import { initDb, getSnapshot, getPreviousSnapshotDate, getLatestSnapshotDate, getGuildConfig, setGuildConfig } from './storage.js';
 import { computeDailyStats } from './stats.js';
 import { buildDailyEmbed } from './formatter.js';
 import { registerSchedules, handleLeaderboardMessage, postDailySummary } from './scheduler.js';
@@ -29,6 +29,21 @@ client.once('clientReady', async () => {
   console.log(`[bot] Logged in as ${client.user.tag}`);
   initDb(config.dbPath);
   registerSchedules(client);
+
+  // Migrate: if env vars from the single-server era are present, seed guild_config
+  // for the guild that actually owns COORDLE_CHANNEL_ID (one-time, safe to re-run).
+  const envChannelId = process.env.COORDLE_CHANNEL_ID;
+  const envBotId = process.env.COORDLE_BOT_ID;
+  const envStatsChannelId = process.env.STATS_CHANNEL_ID;
+  if (envChannelId && envBotId) {
+    const channel = await client.channels.fetch(envChannelId).catch(() => null);
+    if (channel?.guildId && !getGuildConfig(channel.guildId)) {
+      setGuildConfig(channel.guildId, 'coordle_channel_id', envChannelId);
+      setGuildConfig(channel.guildId, 'coordle_bot_id', envBotId);
+      if (envStatsChannelId) setGuildConfig(channel.guildId, 'stats_channel_id', envStatsChannelId);
+      console.log(`[bot] Auto-seeded guild_config for guild ${channel.guildId} from env vars`);
+    }
+  }
 
   // Register slash commands globally
   await registerCommands(client.user.id);
